@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Склад">
+<meta name="theme-color" content="#1B1E22">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body><title>Подсчёт склада</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen phone tool — sticky header with room switch, scrolling work area, fixed tab bar at the bottom */
+:root{
+  --bg:#EDEFF1; --surface:#FFFFFF; --sunk:#E3E6E9; --fg:#1A1D21; --muted:#5D6670; --line:#D3D8DD;
+  --accent:#9E6C14; --accent-soft:#F3E7CF; --accent-fg:#FFFFFF;
+  --good:#2C7A4B; --warn:#B0531A; --bad:#B0261E;
+  --f-head:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --r:10px; --tabh:62px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111315; --surface:#1B1E22; --sunk:#24282D; --fg:#ECEEF0; --muted:#98A1AB; --line:#2F343A;
+  --accent:#D8A748; --accent-soft:#3A2F1A; --accent-fg:#16120A;
+  --good:#5CC28A; --warn:#E8975A; --bad:#F07A72; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111315; --surface:#1B1E22; --sunk:#24282D; --fg:#ECEEF0; --muted:#98A1AB; --line:#2F343A;
+  --accent:#D8A748; --accent-soft:#3A2F1A; --accent-fg:#16120A;
+  --good:#5CC28A; --warn:#E8975A; --bad:#F07A72; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.4;-webkit-text-size-adjust:100%}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line);padding-block:10px 10px}
+.trow{display:flex;align-items:center;gap:10px;justify-content:space-between}
+h1{font-family:var(--f-head);font-size:20px;letter-spacing:.01em;margin:0;text-wrap:balance}
+h1 small{font-family:var(--f-body);font-weight:500;font-size:12px;color:var(--muted);margin-left:6px}
+h2{font-family:var(--f-head);font-size:17px;margin:0 0 8px}
+.chip{font-size:12px;padding:3px 9px;border-radius:99px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.chip.ok{color:var(--good)} .chip.warn{color:var(--warn)} .chip.bad{color:var(--bad)}
+.rooms{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;background:var(--sunk);padding:4px;border-radius:12px}
+.rooms button{border:0;background:transparent;border-radius:9px;padding:9px 6px;font-weight:600;min-height:42px;color:var(--muted)}
+.rooms button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.rooms .n{display:block;font-weight:400;font-size:11px;opacity:.85;font-family:var(--f-mono)}
+main{padding-block:12px calc(var(--tabh) + 24px + env(safe-area-inset-bottom,0px))}
+.panel[hidden]{display:none}
+.stack{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;min-width:0}
+.muted{color:var(--muted)} .small{font-size:13px} .mono{font-family:var(--f-mono)} .num{font-variant-numeric:tabular-nums}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:12px;color:var(--muted);letter-spacing:.03em;text-transform:uppercase}
+input.in,select.in,textarea.in{width:100%;font-size:16px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);min-height:46px}
+textarea.in{min-height:90px;font-family:var(--f-mono);font-size:13px}
+.searchbox{position:relative}
+.searchbox input{font-family:var(--f-mono);font-size:19px;padding:14px 44px 14px 14px;min-height:56px;border:2px solid var(--accent)}
+.searchbox .x{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;font-size:22px;width:40px;height:40px;color:var(--muted)}
+.shelfrow{display:flex;gap:8px;align-items:center}
+.shelfrow input{flex:1;min-height:40px;padding:8px 10px;font-size:16px}
+.shelfrow span{font-size:12px;color:var(--muted);white-space:nowrap}
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.row{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:11px 14px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;width:100%;min-width:0}
+.row:first-child{border-top:0}
+.row:active{background:var(--sunk)}
+.row .art{font-family:var(--f-mono);font-weight:600;font-size:15px;overflow-wrap:anywhere}
+.row .nm{grid-column:1/2;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.row .q{grid-row:1/3;grid-column:2;text-align:right;font-family:var(--f-mono);font-size:13px;align-self:center;white-space:nowrap}
+.row .q b{font-size:17px;color:var(--fg)}
+.row.new .art::after{content:"новая";font-family:var(--f-body);font-size:10px;font-weight:600;margin-left:6px;padding:1px 6px;border-radius:99px;background:var(--accent-soft);color:var(--accent);vertical-align:2px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.tag.good{color:var(--good)} .tag.bad{color:var(--bad)} .tag.warn{color:var(--warn)}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 14px;min-height:46px;font-weight:600}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.big{width:100%;min-height:56px;font-size:17px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.5}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.empty{padding:22px 16px;text-align:center;color:var(--muted)}
+.empty b{color:var(--fg);display:block;margin-bottom:4px;font-family:var(--f-head);font-size:17px}
+.recent .row{grid-template-columns:auto 1fr auto;align-items:center}
+.recent .row .tm{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.recent .row .what{min-width:0;overflow-wrap:anywhere;font-size:14px}
+.undo{border:0;background:var(--sunk);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--muted)}
+.sec{display:flex;justify-content:space-between;align-items:baseline;margin:4px 2px 0}
+.sec h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:600}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+nav.tabs button{border:0;background:transparent;height:var(--tabh);font-size:12px;font-weight:600;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+nav.tabs button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+nav.tabs button[aria-current="page"]{color:var(--accent)}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;min-width:0}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi .v{font-family:var(--f-mono);font-size:19px;font-weight:600;margin-top:2px;overflow-wrap:anywhere}
+.kpi .d{font-size:12px;color:var(--muted);margin-top:2px}
+.total{background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--r);padding:14px}
+.total .v{font-family:var(--f-mono);font-size:28px;font-weight:600;color:var(--fg)}
+.bar{height:8px;background:var(--sunk);border-radius:99px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.filters{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.filters button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:7px 12px;font-size:13px;white-space:nowrap;min-height:36px}
+.filters button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.steps li{padding-left:2px}
+.banner{background:var(--accent-soft);color:var(--fg);border-radius:10px;padding:10px 12px;font-size:13px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.tbl{overflow-x:auto}
+.tbl table{border-collapse:collapse;font-size:12px;width:100%}
+.tbl td,.tbl th{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;white-space:nowrap}
+.map{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.check input{width:22px;height:22px;flex:none;margin-top:1px;accent-color:var(--accent)}
+/* sheet */
+.ov{position:fixed;inset:0;z-index:20;background:rgba(10,12,14,.45);display:flex;align-items:flex-end;justify-content:center}
+.ov[hidden]{display:none!important}
+.sheet{background:var(--surface);width:100%;max-width:640px;max-height:92%;overflow:auto;border-radius:16px 16px 0 0;padding:16px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
+.sh-art{font-family:var(--f-mono);font-size:22px;font-weight:600;overflow-wrap:anywhere}
+.sh-close{border:0;background:var(--sunk);border-radius:99px;width:38px;height:38px;font-size:18px;flex:none}
+.here{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.here div{background:var(--sunk);border-radius:9px;padding:8px;text-align:center;min-width:0}
+.here .l{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.here .v{font-family:var(--f-mono);font-weight:600;font-size:18px}
+.here .cur{outline:2px solid var(--accent)}
+.qty{display:grid;grid-template-columns:64px 1fr 64px;gap:8px}
+.qty button{border:1px solid var(--line);background:var(--sunk);border-radius:10px;font-size:28px;min-height:64px}
+.qty input{text-align:center;font-family:var(--f-mono);font-size:32px;font-weight:600;min-height:64px;border:2px solid var(--accent)}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.quick button{border:1px solid var(--line);background:var(--surface);border-radius:9px;min-height:44px;font-family:var(--f-mono);font-weight:600}
+.log .row{grid-template-columns:1fr auto auto;align-items:center;padding:9px 12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tabh) + 14px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:99px;font-size:14px;font-weight:600;max-width:calc(100% - 32px);text-align:center}
+.toast[hidden]{display:none}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.6}}}
+@media (min-width:700px){main,header.top>.wrap-in{max-width:720px;margin-inline:auto}}
+</style>
+
+<header class="top wrap">
+  <div class="wrap-in">
+    <div class="trow">
+      <h1>Подсчёт склада<small id="hdrSub">Турбо Технологии</small></h1>
+      <span class="chip" id="conn">Подключаюсь…</span>
+    </div>
+    <div class="rooms" role="group" aria-label="Где считаю">
+      <button id="roomMain" aria-pressed="true"><span id="roomMainName">Основной склад</span><span class="n" id="roomMainSum">—</span></button>
+      <button id="roomShop" aria-pressed="false"><span id="roomShopName">Цех</span><span class="n" id="roomShopSum">—</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="demoBanner" class="banner" hidden><span><b>Пример.</b> Ничего не сохраняется — просто попробуйте.</span><button class="undo" id="demoExit">Выйти</button></div>
+
+  <!-- COUNT -->
+  <section class="panel stack" id="p-count">
+    <div class="searchbox">
+      <input class="in" id="q" type="search" placeholder="Артикул или название" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search" aria-label="Поиск по артикулу">
+      <button class="x" id="qClear" aria-label="Очистить">×</button>
+    </div>
+    <div class="shelfrow"><span>Полка</span><input class="in" id="shelf" placeholder="например С2-П3 (не обязательно)" autocomplete="off" autocapitalize="characters"></div>
+    <div id="results"></div>
+    <div id="recentWrap">
+      <div class="sec"><h3>Последние записи</h3><span class="small muted" id="recentInfo"></span></div>
+      <div id="recent" class="list recent" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <!-- LIST -->
+  <section class="panel stack" id="p-list" hidden>
+    <input class="in" id="lq" type="search" placeholder="Найти в списке" autocomplete="off" aria-label="Найти в списке">
+    <div class="filters" id="filters"></div>
+    <div id="listBox"></div>
+  </section>
+
+  <!-- TOTALS -->
+  <section class="panel stack" id="p-tot" hidden></section>
+
+  <!-- DATA -->
+  <section class="panel stack" id="p-data" hidden>
+    <div class="card stack">
+      <h2>Номенклатура из 1С</h2>
+      <div class="small" id="nomInfo">Список ещё не загружен.</div>
+      <ol class="steps small">
+        <li>В 1С сформируйте отчёт по остаткам склада (обычно «Остатки запасов» или «Остатки товаров») с колонками <b>Артикул, Номенклатура, Количество, Сумма</b> по себестоимости. Подойдёт и просто список номенклатуры: <i>Ещё → Вывести список</i>.</li>
+        <li>Сохраните его в Excel (значок дискеты → .xlsx).</li>
+        <li>Откройте эту же страницу на компьютере или на iPhone и выберите файл ниже. Список появится на всех ваших устройствах.</li>
+      </ol>
+      <div class="field"><label for="file">Файл Excel или CSV</label><input class="in" id="file" type="file" accept=".xlsx,.xls,.csv,.txt"></div>
+      <details><summary class="small muted">или вставить таблицу из Excel</summary>
+        <div class="stack" style="margin-top:8px"><textarea class="in" id="paste" placeholder="Скопируйте строки в Excel и вставьте сюда"></textarea><button class="btn" id="pasteGo">Разобрать</button></div>
+      </details>
+      <div id="mapBox" class="stack"></div>
+    </div>
+    <div class="card stack">
+      <h2>Помещения</h2>
+      <div class="map">
+        <div class="field"><label for="nmMain">Первое</label><input class="in" id="nmMain"></div>
+        <div class="field"><label for="nmShop">Второе</label><input class="in" id="nmShop"></div>
+      </div>
+      <div class="btns"><button class="btn" id="saveNames">Сохранить названия</button></div>
+    </div>
+    <div class="card stack">
+      <h2>Начать заново</h2>
+      <div class="small muted">Удаляет все записи подсчёта. Номенклатура остаётся.</div>
+      <div class="btns" id="wipeBox"><button class="btn danger" id="wipe">Удалить все записи</button></div>
+    </div>
+    <div class="card stack" id="backupCard">
+      <h2>Резервная копия</h2>
+      <div class="small muted" id="bkInfo">Все записи и номенклатура одним файлом. Сохраняйте в конце каждого дня подсчёта.</div>
+      <div class="btns"><button class="btn" id="bkSave">Сохранить копию</button></div>
+      <div class="field" id="bkRestore"><label for="bkFile">Восстановить из копии</label><input class="in" id="bkFile" type="file" accept=".json,application/json"></div>
+      <div class="btns" id="bkBox"></div>
+    </div>
+    <div class="card stack" id="tryBox">
+      <h2>Попробовать на примере</h2>
+      <div class="small muted">Загрузит 10 примерных позиций только на этом экране, без сохранения.</div>
+      <div class="btns"><button class="btn" id="demoGo">Открыть пример</button></div>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" aria-label="Разделы">
+  <button data-tab="count" aria-current="page"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><circle cx="18" cy="16" r="3"/><path d="M20.2 18.2 22 20"/></svg>Счёт</button>
+  <button data-tab="list"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>Список</button>
+  <button data-tab="tot"><svg viewBox="0 0 24 24"><path d="M5 19V11M10 19V6M15 19v-5M20 19V9"/></svg>Итоги</button>
+  <button data-tab="data"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Данные</button>
+</nav>
+
+<div class="ov" id="ov" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+"use strict";
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtN=n=>(Math.round((n||0)*100)/100).toLocaleString('ru-RU');
+const money=n=>Math.round(n||0).toLocaleString('ru-RU')+' ₽';
+const parseNum=v=>{if(typeof v==='number')return v;const s=String(v??'').replace(/[\s ₽]/g,'').replace(',','.');if(s==='')return null;const n=parseFloat(s);return isFinite(n)?n:null};
+const CYR={'А':'A','В':'B','Е':'E','К':'K','М':'M','Н':'H','О':'O','Р':'P','С':'C','Т':'T','Х':'X','У':'Y','Ё':'E'};
+function normArt(s,map=CYR){let o='';for(const ch of String(s??'').toUpperCase()){const c=map[ch]??ch;if(/[\s\-.\/_\\,]/.test(c))continue;o+=c}return o}
+// артикул, набранный по-русски: по звучанию (гт15 → GT15) и в русской раскладке (ПЕ15 → GT15)
+const PHON={'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Е':'E','Ё':'E','Ж':'J','З':'Z','И':'I','Й':'Y','К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S','Т':'T','У':'U','Ф':'F','Х':'H','Ц':'C','Ч':'CH','Ш':'SH','Щ':'SH','Ы':'Y','Э':'E','Ю':'YU','Я':'YA','Ь':'','Ъ':''};
+const KBD={};'ЙЦУКЕНГШЩЗФЫВАПРОЛДЯЧСМИТЬ'.split('').forEach((c,i)=>KBD[c]='QWERTYUIOPASDFGHJKLZXCVBNM'[i]);
+function artVariants(q){const v=new Set([normArt(q)]);if(/[А-ЯЁа-яё]/.test(q)){v.add(normArt(q,PHON));v.add(normArt(q,KBD))}v.delete('');return [...v]}
+function fnv(str,seed){let h=seed>>>0;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0}return h.toString(36)}
+function keyOf(art,name){const b=normArt(art)||('N'+String(name??'').toLowerCase().replace(/\s+/g,' ').trim());return 'k'+fnv(b,2166136261)+fnv(b,3332663)}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const hhmm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const dday=t=>{const d=new Date(t);return d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})};
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+let toastT;function toast(msg){const t=$('toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2200)}
+
+/* ---------- state ---------- */
+const S={
+  db:null, mode:'loading', // loading | db | local | demo
+  nom:[], nomMap:new Map(), meta:{locs:{main:'Основной склад',shop:'Цех'},chunks:0},
+  counts:new Map(), pending:new Map(),
+  loc:LS.get('pc_loc','main'), tab:'count', filter:'all', listLimit:150,
+  nomChunks:new Map(), saving:0, err:null, slow:false
+};
+const locName=l=>(S.meta.locs&&S.meta.locs[l])||(l==='main'?'Основной склад':'Цех');
+
+/* ---------- items ---------- */
+function getCount(key){return S.pending.get(key)||S.counts.get(key)||null}
+function getItem(key){
+  const n=S.nomMap.get(key),c=getCount(key);
+  if(!n&&!c)return null;
+  return {key,art:n?n.art:c.art,name:n?n.name:c.name,unit:(c&&c.unit)||(n&&n.unit)||'шт',
+    price:(c&&c.price!=null)?c.price:(n?n.price:null),stock:n?n.stock:null,inNom:!!n,log:(c&&c.log)||[],
+    n:n?n.n:undefined,ln:n?n.ln:undefined};
+}
+const qIn=(it,l)=>it.log.reduce((s,e)=>s+(e.l===l?e.q:0),0);
+const qAll=it=>it.log.reduce((s,e)=>s+e.q,0);
+function allKeys(){const s=new Set(S.nomMap.keys());for(const k of S.counts.keys())s.add(k);for(const k of S.pending.keys())s.add(k);return s}
+function allItems(){const out=[];for(const k of allKeys()){const it=getItem(k);if(it)out.push(it)}return out}
+
+function rebuildNom(){
+  const arr=[];const n=S.meta.chunks||0;
+  for(let i=0;i<n;i++){const c=S.nomChunks.get('c'+i);if(c&&Array.isArray(c.items))for(const r of c.items)arr.push(r)}
+  S.nom=arr.map(r=>({art:r[0]||'',name:r[1]||'',unit:r[2]||'шт',price:r[3],stock:r[4],key:keyOf(r[0],r[1])}));
+  S.nomMap=new Map();for(const it of S.nom){it.n=normArt(it.art);it.ln=it.name.toLowerCase();S.nomMap.set(it.key,it)}
+}
+
+/* ---------- storage ---------- */
+function persistPending(){LS.set('pc_pending',[...S.pending.entries()])}
+function saveLocal(){if(S.mode!=='local')return;LS.set('pc_local',{meta:S.meta,nom:[...S.nomChunks.entries()],counts:[...S.counts.entries()]})}
+function writeCount(key,doc){
+  if(S.mode==='demo'){S.counts.set(key,doc);refresh();return}
+  if(S.mode==='local'){S.counts.set(key,doc);saveLocal();refresh();return}
+  S.pending.set(key,doc);persistPending();refresh();flush();
+}
+const inflight=new Set();
+function flush(){
+  if(S.mode!=='db')return;
+  for(const [key,doc] of S.pending){
+    if(inflight.has(key))continue;
+    inflight.add(key);S.saving++;updConn();
+    const p=doc===null?S.db.doc('counts/'+key).delete():S.db.doc('counts/'+key).set(doc);
+    p.then(()=>{S.err=null;if(S.pending.get(key)===doc){S.pending.delete(key);if(doc===null)S.counts.delete(key);else S.counts.set(key,doc);persistPending()}})
+     .catch(e=>{S.err=e&&e.code||'error'})
+     .finally(()=>{inflight.delete(key);S.saving--;updConn();if(S.pending.has(key)&&S.pending.get(key)!==doc)flush()});
+  }
+}
+setInterval(()=>{if(S.pending.size)flush()},15000);
+window.addEventListener('online',flush);
+
+function addEntry(key,base,l,q){
+  const cur=getCount(key);
+  const doc=cur?JSON.parse(JSON.stringify(cur)):{art:base.art,name:base.name,unit:base.unit||'шт',price:base.inNom?null:(base.price??null),isNew:!base.inNom,log:[]};
+  const e={id:uid(),l,q,s:$('shelf').value.trim(),t:Date.now()};
+  doc.log.push(e);doc.upd=e.t;writeCount(key,doc);return e;
+}
+function removeEntry(key,id){
+  const cur=getCount(key);if(!cur)return;
+  const doc=JSON.parse(JSON.stringify(cur));doc.log=doc.log.filter(e=>e.id!==id);doc.upd=Date.now();
+  writeCount(key,doc);
+}
+function patchCount(key,base,patch){
+  const cur=getCount(key);
+  const doc=cur?JSON.parse(JSON.stringify(cur)):{art:base.art,name:base.name,unit:base.unit||'шт',price:null,isNew:!base.inNom,log:[]};
+  Object.assign(doc,patch,{upd:Date.now()});writeCount(key,doc);
+}
+
+/* ---------- connection chip ---------- */
+function updConn(){
+  const c=$('conn');let t,cls='';
+  if(S.mode==='demo'){t='Пример';cls='warn'}
+  else if(S.mode==='local'){t='Офлайн · в телефоне ✓';cls='ok'}
+  else if(S.mode==='loading'){t=S.slow?'Нет связи…':'Подключаюсь…';cls=S.slow?'warn':''}
+  else if(S.pending.size){t=(S.err?'Ждёт связи: ':'Сохраняю: ')+S.pending.size;cls=S.err?'bad':'warn'}
+  else if(S.slow){t='Может быть устаревшим';cls='warn'}
+  else{t='Сохранено ✓';cls='ok'}
+  c.textContent=t;c.className='chip '+cls;
+}
+
+/* ---------- search ---------- */
+function search(q,limit=30){
+  q=q.trim();if(!q)return[];
+  const vs=artVariants(q),words=q.toLowerCase().split(/\s+/).filter(Boolean),res=[];
+  for(const it of allItems()){
+    const ia=it.n!==undefined?it.n:normArt(it.art),ln=(it.ln!==undefined?it.ln:String(it.name).toLowerCase());
+    let sc=-1;
+    if(ia)for(const n of vs){let s=-1;if(ia===n)s=0;else if(ia.startsWith(n))s=1;else if(ia.includes(n))s=2;if(s>=0&&(sc<0||s<sc))sc=s}
+    if(sc<0&&words.length&&words.every(w=>ln.includes(w)))sc=3;
+    if(sc>=0)res.push([sc,it]);
+  }
+  res.sort((a,b)=>a[0]-b[0]||String(a[1].art).localeCompare(String(b[1].art)));
+  return res.slice(0,limit).map(r=>r[1]);
+}
+
+/* ---------- rendering ---------- */
+function rowHTML(it,mode){
+  const m=qIn(it,'main'),s=qIn(it,'shop'),tot=m+s,cnt=it.log.length>0;
+  let right;
+  if(mode==='list'){
+    const st=it.stock;let tag='';
+    if(cnt&&st!=null&&Math.abs(tot-st)>1e-9)tag=`<span class="tag ${tot<st?'bad':'warn'}">${tot<st?'−':'+'}${fmtN(Math.abs(tot-st))}</span>`;
+    else if(cnt&&st!=null)tag='<span class="tag good">сходится</span>';
+    right=`<div class="q">${cnt?`<b>${fmtN(tot)}</b> ${esc(it.unit)}`:'<span class="muted">не считали</span>'}${st!=null?`<br><span class="muted">1С: ${fmtN(st)}</span>`:''}${tag?'<br>'+tag:''}</div>`;
+  }else{
+    right=`<div class="q">${cnt?`<b>${fmtN(qIn(it,S.loc))}</b> здесь<br><span class="muted">всего ${fmtN(tot)}</span>`:(it.stock!=null?`<span class="muted">1С: ${fmtN(it.stock)}</span>`:'')}</div>`;
+  }
+  return `<button class="row${it.inNom?'':' new'}" data-key="${it.key}"><span class="art">${esc(it.art||'без артикула')}</span>${right}<span class="nm">${esc(it.name)}${it.price!=null?' · '+money(it.price):''}</span></button>`;
+}
+function renderResults(){
+  const q=$('q').value,box=$('results');
+  $('recentWrap').hidden=!!q.trim();
+  if(!q.trim()){
+    if(!S.nom.length&&!S.counts.size&&!S.pending.size&&S.mode!=='loading'){
+      box.innerHTML=`<div class="card empty"><b>Список из 1С не загружен</b>Загрузите номенклатуру во вкладке «Данные» — тогда позиции будут находиться по артикулу. Считать можно и без неё: наберите артикул, и программа предложит добавить новую позицию.</div>`;
+    }else box.innerHTML='';
+    return;
+  }
+  const r=search(q);
+  const vs=artVariants(q),exact=r.some(it=>vs.includes(normArt(it.art)));
+  let h='';
+  if(r.length)h+=`<div class="list">${r.map(it=>rowHTML(it,'count')).join('')}</div>`;
+  else h+=`<div class="card empty"><b>Не найдено</b>Такого артикула нет в списке из 1С.</div>`;
+  if(!exact)h+=`<button class="btn big" style="margin-top:10px" id="addNew">+ Новая позиция «${esc(q.trim())}»</button>`;
+  box.innerHTML=h;
+  const an=$('addNew');if(an)an.onclick=()=>openNew(q.trim());
+}
+function renderRecent(){
+  const all=[];for(const it of allItems())for(const e of it.log)all.push([e,it]);
+  all.sort((a,b)=>b[0].t-a[0].t);
+  const today=new Date().toDateString();
+  const nToday=all.filter(([e])=>new Date(e.t).toDateString()===today).length;
+  $('recentInfo').textContent=all.length?`сегодня ${nToday} · всего ${all.length}`:'';
+  const top=all.slice(0,12);
+  $('recent').innerHTML=top.length?top.map(([e,it])=>`<div class="row"><span class="tm">${hhmm(e.t)}</span><span class="what"><b class="mono">${e.q>0?'+':''}${fmtN(e.q)}</b> · <span class="mono">${esc(it.art)}</span> <span class="muted small">${esc(locName(e.l))}${e.s?' · '+esc(e.s):''}</span></span><button class="undo" data-undo="${it.key}|${e.id}">Отменить</button></div>`).join('')
+    :`<div class="empty"><b>Пока пусто</b>Наберите артикул вверху, выберите позицию и впишите количество.</div>`;
+}
+function renderRooms(){
+  let sm=0,ss=0,pm=0,ps=0;
+  for(const it of allItems()){const m=qIn(it,'main'),s=qIn(it,'shop');if(m){pm++;sm+=m*(it.price||0)}if(s){ps++;ss+=s*(it.price||0)}}
+  $('roomMainName').textContent=locName('main');$('roomShopName').textContent=locName('shop');
+  $('roomMainSum').textContent=pm?`${pm} поз · ${money(sm)}`:'не считали';
+  $('roomShopSum').textContent=ps?`${ps} поз · ${money(ss)}`:'не считали';
+  $('roomMain').setAttribute('aria-pressed',S.loc==='main');$('roomShop').setAttribute('aria-pressed',S.loc==='shop');
+}
+const FILTERS=[['all','Все'],['done','Посчитано'],['todo','Не посчитано'],['diff','Расхождения'],['new','Новые'],['noprice','Без цены']];
+function renderList(){
+  const fb=$('filters');
+  const items=allItems();
+  const cnt={all:items.length,done:0,todo:0,diff:0,new:0,noprice:0};
+  const f={
+    done:it=>it.log.length>0,todo:it=>it.log.length===0,
+    diff:it=>it.stock!=null?Math.abs(qAll(it)-it.stock)>1e-9:false,
+    new:it=>!it.inNom,noprice:it=>it.price==null||it.price===0
+  };
+  for(const it of items)for(const k in f)if(f[k](it))cnt[k]++;
+  fb.innerHTML=FILTERS.map(([k,l])=>`<button data-f="${k}" aria-pressed="${S.filter===k}">${l} <span class="muted">${cnt[k]}</span></button>`).join('');
+  let arr=S.filter==='all'?items:items.filter(f[S.filter]);
+  const q=$('lq').value.trim();
+  if(q){const keys=new Set(search(q,100000).map(i=>i.key));arr=arr.filter(i=>keys.has(i.key))}
+  arr.sort((a,b)=>String(a.art).localeCompare(String(b.art),'ru'));
+  const box=$('listBox');
+  if(!arr.length){box.innerHTML=`<div class="card empty"><b>Здесь пусто</b>${items.length?'Под этот фильтр ничего не подходит.':'Загрузите номенклатуру во вкладке «Данные» или начните считать.'}</div>`;return}
+  box.innerHTML=`<div class="list">${arr.slice(0,S.listLimit).map(it=>rowHTML(it,'list')).join('')}</div>`+(arr.length>S.listLimit?`<button class="btn big" style="margin-top:10px" id="more">Показать ещё (${arr.length-S.listLimit})</button>`:'');
+  const m=$('more');if(m)m.onclick=()=>{S.listLimit+=300;renderList()};
+}
+function totals(){
+  const items=allItems();const T={main:{p:0,q:0,s:0},shop:{p:0,q:0,s:0},sum:0,counted:0,nom1c:0,nomCounted:0,shortS:0,overS:0,noPrice:0,newN:0,diffN:0};
+  for(const it of items){
+    for(const l of ['main','shop']){const q=qIn(it,l);if(q){T[l].p++;T[l].q+=q;T[l].s+=q*(it.price||0)}}
+    const tot=qAll(it),pr=it.price||0;
+    if(it.log.length){T.counted++;if(!pr)T.noPrice++;if(!it.inNom)T.newN++}
+    if(it.inNom&&it.stock>0){T.nom1c++;if(it.log.length)T.nomCounted++}
+    if(it.stock!=null&&(it.log.length||it.stock>0)){const d=tot-it.stock;if(Math.abs(d)>1e-9){T.diffN++;if(d<0)T.shortS+=-d*pr;else T.overS+=d*pr}}
+  }
+  T.sum=T.main.s+T.shop.s;return T;
+}
+function renderTot(){
+  const T=totals(),p=$('p-tot');
+  const pct=T.nom1c?Math.round(T.nomCounted/T.nom1c*100):0;
+  p.innerHTML=`
+  <div class="total">
+    <div class="small muted">Склад запчастей — для «Отчёта ИП»</div>
+    <div class="v num">${money(T.sum)}</div>
+    <div class="small muted">по закупочным ценам, оба помещения${T.noPrice?` · <b style="color:var(--warn)">${T.noPrice} поз. без цены</b> не вошли в сумму`:''}</div>
+    <div class="btns" style="margin-top:10px"><button class="btn" id="copySum">Скопировать сумму</button></div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="l">${esc(locName('main'))}</div><div class="v num">${money(T.main.s)}</div><div class="d">${T.main.p} поз · ${fmtN(T.main.q)} шт</div></div>
+    <div class="kpi"><div class="l">${esc(locName('shop'))}</div><div class="v num">${money(T.shop.s)}</div><div class="d">${T.shop.p} поз · ${fmtN(T.shop.q)} шт</div></div>
+  </div>
+  ${T.nom1c?`<div class="card"><div class="trow"><b>Прогресс по списку 1С</b><span class="mono">${pct}%</span></div><div class="bar"><i style="width:${pct}%"></i></div><div class="small muted" style="margin-top:6px">Посчитано ${T.nomCounted} из ${T.nom1c} позиций, которые по 1С есть в наличии. Новых, которых нет в 1С: ${T.newN}.</div></div>`:''}
+  ${S.nom.length?`<div class="kpis">
+    <div class="kpi"><div class="l">Недостача против 1С</div><div class="v num" style="color:var(--bad)">${money(T.shortS)}</div><div class="d">меньше, чем по 1С</div></div>
+    <div class="kpi"><div class="l">Излишки против 1С</div><div class="v num" style="color:var(--warn)">${money(T.overS)}</div><div class="d">${T.diffN} поз. с расхождением</div></div>
+  </div><div class="small muted">Пока подсчёт не закончен, недостача будет большой — непосчитанные позиции считаются как ноль.</div>`:''}
+  <div class="card stack">
+    <h2>Выгрузка для 1С</h2>
+    <label class="check"><input type="checkbox" id="zeroMissing" ${LS.get('pc_zero',true)?'checked':''}><span>Позиции из 1С, которые не нашёл, выгрузить в «${esc(locName('main'))}» с количеством <b>0</b> (чтобы 1С их списала)</span></label>
+    <button class="btn pri big" id="xlsx">Скачать Excel</button>
+    <div class="btns"><button class="btn" id="tsvMain">Копировать: ${esc(locName('main'))}</button><button class="btn" id="tsvShop">Копировать: ${esc(locName('shop'))}</button></div>
+    <div class="small muted">В файле листы: по каждому помещению (Артикул, Номенклатура, Ед., Количество, Цена, Сумма), «Все позиции» с расхождениями, «Не найдено» и «Журнал» всех записей.</div>
+  </div>
+  <div class="card stack small">
+    <h2>Как загрузить в 1С</h2>
+    <ol class="steps">
+      <li>Сначала на <b>копии базы</b>. В 1С заведите два склада: «${esc(locName('main'))}» и «${esc(locName('shop'))}».</li>
+      <li>Документ «Инвентаризация запасов» (или «Ввод начальных остатков» в новой базе) → выбрать склад.</li>
+      <li>В табличной части: <i>Заполнить → Загрузить из внешнего источника</i> → вставить лист этого склада из Excel. 1С сопоставит по артикулу, новые позиции предложит создать.</li>
+      <li>Проверить итог документа — он должен совпасть с суммой выше. Потом провести.</li>
+    </ol>
+    <div class="muted">Дальше, когда переносите запчасть из основного склада в цех, делайте в 1С «Перемещение запасов» — тогда остатки по помещениям будут сходиться.</div>
+  </div>`;
+  $('copySum').onclick=()=>copyText(String(Math.round(T.sum)),'Сумма скопирована');
+  $('zeroMissing').onchange=e=>LS.set('pc_zero',e.target.checked);
+  $('xlsx').onclick=exportXlsx;
+  $('tsvMain').onclick=()=>copyText(tsv('main'),'Скопировано — вставьте в 1С');
+  $('tsvShop').onclick=()=>copyText(tsv('shop'),'Скопировано — вставьте в 1С');
+}
+function renderData(){
+  $('nomInfo').innerHTML=S.nom.length?`Загружено <b>${S.nom.length}</b> позиций${S.meta.importedAt?` · ${dday(S.meta.importedAt)} ${hhmm(S.meta.importedAt)}`:''}${S.meta.src?` · <span class="mono">${esc(S.meta.src)}</span>`:''}. Новая загрузка заменит список, записи подсчёта останутся.`:'Список ещё не загружен.';
+  if(document.activeElement!==$('nmMain'))$('nmMain').value=locName('main');
+  if(document.activeElement!==$('nmShop'))$('nmShop').value=locName('shop');
+  $('tryBox').hidden=S.mode==='demo';
+  $('bkRestore').hidden=S.mode!=='local';
+  $('bkInfo').textContent=S.mode==='local'?'Данные хранятся только в этом телефоне. Сохраняйте копию в конце каждого дня подсчёта — в «Файлы» или себе в мессенджер.':'Все записи и номенклатура одним файлом — на всякий случай.';
+}
+function refresh(){
+  renderRooms();updConn();
+  if(S.tab==='count'){renderResults();renderRecent()}
+  else if(S.tab==='list')renderList();
+  else if(S.tab==='tot')renderTot();
+  else renderData();
+  if(!$('ov').hidden&&sheetKey)renderSheetInfo();
+  $('demoBanner').hidden=S.mode!=='demo';
+}
+
+/* ---------- item sheet ---------- */
+let sheetKey=null,sheetBase=null;
+function openItem(key){
+  const it=getItem(key);if(!it)return;sheetKey=key;sheetBase=it;
+  $('sheet').innerHTML=`
+    <div class="trow" style="align-items:flex-start"><div style="min-width:0"><div class="sh-art">${esc(it.art||'без артикула')}</div><div class="muted">${esc(it.name)}</div></div><button class="sh-close" id="shX" aria-label="Закрыть">×</button></div>
+    <div class="here" id="shHere"></div>
+    <div class="qty"><button id="qm" aria-label="Минус">−</button><input class="in" id="qv" inputmode="decimal" value="1" aria-label="Количество"><button id="qp" aria-label="Плюс">+</button></div>
+    <div class="quick"><button data-a="1">1</button><button data-a="2">2</button><button data-a="5">5</button><button data-a="10">10</button></div>
+    <button class="btn pri big" id="addBtn"></button>
+    <button class="btn" id="setBtn"></button>
+    <div class="map">
+      <div class="field"><label for="shPrice">Цена закупки, ₽</label><input class="in" id="shPrice" inputmode="decimal" value="${it.price!=null?it.price:''}" placeholder="нет цены"></div>
+      <div class="field"><label for="shUnit">Ед.</label><input class="in" id="shUnit" value="${esc(it.unit)}"></div>
+    </div>
+    <div><div class="sec"><h3>Записи по позиции</h3></div><div class="list log" id="shLog" style="margin-top:6px"></div></div>`;
+  $('ov').hidden=false;
+  $('shX').onclick=closeSheet;
+  const qv=$('qv');
+  const val=()=>{const n=parseNum(qv.value);return n==null?0:n};
+  $('qm').onclick=()=>{qv.value=fmtIn(Math.max(0,val()-1));updBtns()};
+  $('qp').onclick=()=>{qv.value=fmtIn(val()+1);updBtns()};
+  $('sheet').querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{qv.value=b.dataset.a;updBtns()});
+  qv.oninput=updBtns;
+  qv.onfocus=()=>qv.select();
+  qv.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('addBtn').click()}};
+  $('addBtn').onclick=()=>{const n=val();if(!n){toast('Впишите количество');return}
+    savePriceUnit();addEntry(sheetKey,getItem(sheetKey)||sheetBase,S.loc,n);
+    toast(`+${fmtN(n)} · ${sheetBase.art||sheetBase.name} · ${locName(S.loc)}`);closeSheet(true)};
+  $('setBtn').onclick=()=>{const n=val();const cur=qIn(getItem(sheetKey)||sheetBase,S.loc);const d=n-cur;
+    if(Math.abs(d)<1e-9){toast('Уже ровно '+fmtN(n));return}
+    savePriceUnit();addEntry(sheetKey,getItem(sheetKey)||sheetBase,S.loc,d);
+    toast(`${locName(S.loc)}: теперь ровно ${fmtN(n)}`);closeSheet(true)};
+  renderSheetInfo();updBtns();
+  setTimeout(()=>{qv.focus();qv.select()},60);
+}
+const fmtIn=n=>String(Math.round(n*1000)/1000).replace('.',',');
+function savePriceUnit(){
+  const it=getItem(sheetKey)||sheetBase;
+  const p=parseNum($('shPrice').value),u=$('shUnit').value.trim()||'шт';
+  const nomP=it.inNom?S.nomMap.get(sheetKey).price:null;
+  const patch={};
+  if((p??null)!==(it.price??null))patch.price=(it.inNom&&p===nomP)?null:p;
+  if(u!==it.unit)patch.unit=u;
+  if(Object.keys(patch).length)patchCount(sheetKey,it,patch);
+}
+function updBtns(){
+  const n=parseNum($('qv').value)||0;
+  $('addBtn').textContent=`Добавить ${fmtN(n)} → ${locName(S.loc)}`;
+  $('setBtn').textContent=`Поставить ровно ${fmtN(n)} в «${locName(S.loc)}»`;
+}
+function renderSheetInfo(){
+  const it=getItem(sheetKey)||sheetBase;if(!$('shHere'))return;
+  const m=qIn(it,'main'),s=qIn(it,'shop');
+  $('shHere').innerHTML=`<div class="${S.loc==='main'?'cur':''}"><div class="l">${esc(locName('main'))}</div><div class="v">${fmtN(m)}</div></div><div class="${S.loc==='shop'?'cur':''}"><div class="l">${esc(locName('shop'))}</div><div class="v">${fmtN(s)}</div></div><div><div class="l">по 1С</div><div class="v">${it.stock!=null?fmtN(it.stock):'—'}</div></div>`;
+  const log=[...it.log].sort((a,b)=>b.t-a.t);
+  $('shLog').innerHTML=log.length?log.map(e=>`<div class="row"><span class="small"><b class="mono">${e.q>0?'+':''}${fmtN(e.q)}</b> · ${esc(locName(e.l))}${e.s?' · '+esc(e.s):''}</span><span class="small muted mono">${dday(e.t)} ${hhmm(e.t)}</span><button class="undo" data-undo="${sheetKey}|${e.id}">Удалить</button></div>`).join(''):`<div class="empty small">Ещё не считали</div>`;
+}
+function closeSheet(ok){
+  $('ov').hidden=true;sheetKey=null;
+  if(ok===true&&S.tab==='count'){$('q').value='';renderResults();renderRecent();$('q').focus()}
+}
+function openNew(art){
+  sheetKey=null;
+  $('sheet').innerHTML=`
+    <div class="trow"><h2 style="margin:0">Новая позиция</h2><button class="sh-close" id="shX" aria-label="Закрыть">×</button></div>
+    <div class="small muted">Её нет в списке из 1С. В Excel она попадёт на лист «Новые» и в общий список — 1С предложит её создать.</div>
+    <div class="field"><label for="nArt">Артикул</label><input class="in mono" id="nArt" value="${esc(art)}" autocapitalize="characters"></div>
+    <div class="field"><label for="nName">Наименование</label><input class="in" id="nName" placeholder="например Картридж турбины GT1749V"></div>
+    <div class="map">
+      <div class="field"><label for="nPrice">Цена закупки, ₽</label><input class="in" id="nPrice" inputmode="decimal"></div>
+      <div class="field"><label for="nUnit">Ед.</label><input class="in" id="nUnit" value="шт"></div>
+    </div>
+    <div class="field"><label for="nQty">Количество → ${esc(locName(S.loc))}</label><input class="in mono" id="nQty" inputmode="decimal" value="1"></div>
+    <button class="btn pri big" id="nGo">Сохранить</button>`;
+  $('ov').hidden=false;$('shX').onclick=closeSheet;
+  setTimeout(()=>$('nName').focus(),60);
+  $('nGo').onclick=()=>{
+    const a=$('nArt').value.trim(),nm=$('nName').value.trim();
+    if(!a&&!nm){toast('Нужен артикул или название');return}
+    const q=parseNum($('nQty').value)||0;
+    const key=keyOf(a,nm);
+    const base={art:a,name:nm||a,unit:$('nUnit').value.trim()||'шт',price:parseNum($('nPrice').value),inNom:S.nomMap.has(key)};
+    if(q)addEntry(key,base,S.loc,q);else patchCount(key,base,{});
+    toast(`Добавлено: ${a||nm}`);closeSheet(true);
+  };
+}
+$('ov').addEventListener('click',e=>{if(e.target===$('ov'))closeSheet()});
+
+/* ---------- export ---------- */
+function exportRows(l,zero){
+  const rows=[];
+  for(const it of allItems()){
+    const q=qIn(it,l);
+    if(it.log.some(e=>e.l===l)||(zero&&l==='main'&&it.inNom&&it.stock>0&&qAll(it)===0))
+      rows.push([it.art,it.name,it.unit,q,it.price??'',Math.round(q*(it.price||0)*100)/100]);
+  }
+  rows.sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'ru'));return rows;
+}
+function tsv(l){const z=LS.get('pc_zero',true);return exportRows(l,z).map(r=>[r[0],r[1],r[2],String(r[3]).replace('.',','),String(r[4]).replace('.',',')].join('\t')).join('\n')}
+async function copyText(t,msg){
+  try{await navigator.clipboard.writeText(t);toast(msg)}catch(e){
+    const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
+    let ok=false;try{ok=document.execCommand('copy')}catch(_){}ta.remove();toast(ok?msg:'Не удалось скопировать — используйте Excel');
+  }
+}
+const sheetName=s=>String(s).replace(/[\[\]:*?\/\\]/g,' ').slice(0,31);
+let dlNs;
+async function exportXlsx(){
+  if(!window.XLSX){toast('Excel ещё загружается, попробуйте через пару секунд');return}
+  const z=LS.get('pc_zero',true),H=['Артикул','Номенклатура','Ед.','Количество','Цена','Сумма'];
+  const wb=XLSX.utils.book_new();
+  for(const l of ['main','shop']){
+    const r=exportRows(l,z);const s=r.reduce((a,x)=>a+x[5],0);
+    const ws=XLSX.utils.aoa_to_sheet([H,...r,[],['','Итого','','','',Math.round(s*100)/100]]);
+    ws['!cols']=[{wch:18},{wch:44},{wch:6},{wch:11},{wch:11},{wch:13}];
+    XLSX.utils.book_append_sheet(wb,ws,sheetName(locName(l)));
+  }
+  const items=allItems().sort((a,b)=>String(a.art).localeCompare(String(b.art),'ru'));
+  const all=[['Артикул','Номенклатура','Ед.',locName('main'),locName('shop'),'Итого факт','По 1С','Разница','Цена','Сумма факт','Сумма разницы','Новая']];
+  for(const it of items){if(!it.log.length&&!(it.stock>0))continue;const m=qIn(it,'main'),s=qIn(it,'shop'),t=m+s,d=it.stock!=null?t-it.stock:'';const pr=it.price||0;
+    all.push([it.art,it.name,it.unit,m,s,t,it.stock??'',d,it.price??'',Math.round(t*pr*100)/100,d===''?'':Math.round(d*pr*100)/100,it.inNom?'':'да'])}
+  const wsA=XLSX.utils.aoa_to_sheet(all);wsA['!cols']=[{wch:18},{wch:40},{wch:5},{wch:10},{wch:10},{wch:10},{wch:9},{wch:9},{wch:10},{wch:12},{wch:13},{wch:7}];
+  XLSX.utils.book_append_sheet(wb,wsA,'Все позиции');
+  const nf=[['Артикул','Номенклатура','По 1С','Цена','Сумма']];for(const it of items)if(it.inNom&&it.stock>0&&!it.log.length)nf.push([it.art,it.name,it.stock,it.price??'',Math.round(it.stock*(it.price||0)*100)/100]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(nf),'Не найдено');
+  const nw=[['Артикул','Наименование','Ед.','Количество','Цена']];for(const it of items)if(!it.inNom)nw.push([it.art,it.name,it.unit,qAll(it),it.price??'']);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(nw),'Новые');
+  const lg=[['Дата','Время','Помещение','Полка','Артикул','Наименование','Кол-во']];
+  const ents=[];for(const it of items)for(const e of it.log)ents.push([e,it]);ents.sort((a,b)=>a[0].t-b[0].t);
+  for(const [e,it] of ents)lg.push([new Date(e.t).toLocaleDateString('ru-RU'),hhmm(e.t),locName(e.l),e.s||'',it.art,it.name,e.q]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(lg),'Журнал');
+  const buf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const fn=`Инвентаризация ${today()}.xlsx`;
+  await saveBlob(fn,new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+}
+async function saveBlob(fn,blob){
+  if(window.claude){
+    try{if(dlNs===undefined)dlNs=await window.claude.use('downloads')}catch(e){dlNs=null}
+    if(dlNs){try{await dlNs.save({filename:fn,data:blob});toast('Файл сохранён')}catch(e){if(e&&e.code!=='declined')toast('Не удалось сохранить: '+(e.message||e.code))}return}
+  }
+  // офлайн-версия на iPhone: меню «Поделиться» → Сохранить в «Файлы» / отправить в мессенджер
+  try{const file=new File([blob],fn,{type:blob.type||'application/octet-stream'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:fn});return}}
+  catch(e){if(e&&e.name==='AbortError')return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fn;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},5000);
+}
+const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
+/* ---------- backup ---------- */
+function backupData(){
+  const keys=[...new Set([...S.counts.keys(),...S.pending.keys()])];
+  return {app:'podschet-sklada',v:1,at:Date.now(),meta:S.meta,nom:[...S.nomChunks.entries()],counts:keys.map(k=>[k,getCount(k)]).filter(x=>x[1])};
+}
+$('bkSave').onclick=()=>{if(S.mode==='demo'){toast('Сначала выйдите из примера');return}
+  saveBlob(`Склад копия ${today()} ${hhmm(Date.now()).replace(':','-')}.json`,new Blob([JSON.stringify(backupData())],{type:'application/json'}))};
+$('bkFile').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;let B;
+  try{B=JSON.parse(await f.text());if(B.app!=='podschet-sklada')throw 0}catch(_){toast('Это не файл копии');e.target.value='';return}
+  const n=(B.counts||[]).length;
+  $('bkBox').innerHTML=`<span class="small" style="align-self:center">Заменить текущие данные копией от ${dday(B.at)} ${hhmm(B.at)} (${n} позиций с записями)?</span><button class="btn danger" id="bkYes">Да, заменить</button><button class="btn" id="bkNo">Нет</button>`;
+  const reset=()=>{$('bkBox').innerHTML='';e.target.value=''};
+  $('bkNo').onclick=reset;
+  $('bkYes').onclick=()=>{S.meta=B.meta||S.meta;S.nomChunks=new Map(B.nom||[]);S.counts=new Map(B.counts||[]);S.pending.clear();persistPending();rebuildNom();saveLocal();reset();toast('Данные восстановлены');refresh()};
+};
+
+/* ---------- import ---------- */
+let IMP=null;
+function decodeText(buf){let t=new TextDecoder('utf-8').decode(buf);if(t.includes(String.fromCharCode(0xFFFD))){try{t=new TextDecoder('windows-1251').decode(buf)}catch(e){}}return t}
+$('file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(!window.XLSX){toast('Excel ещё загружается');return}
+  try{
+    const buf=await f.arrayBuffer();let wb;
+    if(/\.(csv|txt)$/i.test(f.name))wb=XLSX.read(decodeText(buf),{type:'string'});else wb=XLSX.read(buf,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    startMap(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''}),f.name);
+  }catch(err){toast('Не получилось прочитать файл');$('mapBox').innerHTML=`<div class="small" style="color:var(--bad)">Файл не прочитался. Сохраните его из 1С как .xlsx и попробуйте ещё раз.</div>`}
+};
+$('pasteGo').onclick=()=>{const t=$('paste').value;if(!t.trim()){toast('Сначала вставьте таблицу');return}
+  startMap(t.replace(/\r/g,'').split('\n').map(l=>l.split('\t')),'вставка')};
+const FIELDS=[['art','Артикул',/артикул|код\s*произв|каталож/i],['name','Наименование',/номенклатур|наименован|товар/i],['unit','Ед.',/^ед|единиц/i],['qty','Остаток (кол-во)',/остат|колич|кол-во|конечн/i],['sum','Сумма',/сумм|стоимост/i],['price','Цена закупки',/цена|себест/i]];
+function startMap(rows,src){
+  rows=rows.filter(r=>r.some(c=>String(c).trim()!==''));
+  let hi=-1;for(let i=0;i<Math.min(rows.length,25);i++){const r=rows[i].map(c=>String(c));if(r.some(c=>/артикул/i.test(c))||r.some(c=>/номенклатур|наименован/i.test(c))){hi=i;break}}
+  const width=Math.max(...rows.slice(0,60).map(r=>r.length));
+  const head=hi>=0?rows[hi]:[];const cols=[];for(let c=0;c<width;c++){cols.push(String.fromCharCode(65+(c%26))+(c>=26?Math.floor(c/26):'')+(head[c]?': '+String(head[c]).trim().slice(0,30):''))}
+  const map={};
+  for(const [k,,re] of FIELDS){map[k]=-1;if(hi>=0)for(let c=0;c<width;c++){if(Object.values(map).includes(c))continue;if(re.test(String(head[c]||''))){map[k]=c;break}}}
+  if(hi<0){map.art=0;map.name=width>1?1:-1}
+  IMP={rows,hi,map,cols,src};renderMap();
+}
+function parseImp(){
+  const {rows,hi,map}=IMP;const out=new Map();
+  const g=(r,k)=>map[k]>=0?r[map[k]]:'';
+  for(let i=hi+1;i<rows.length;i++){
+    const r=rows[i];const art=String(g(r,'art')).trim(),name=String(g(r,'name')).trim();
+    if(!name&&!art)continue;if(/^итого|^всего/i.test(name)||/^итого/i.test(art))continue;
+    const qRaw=g(r,'qty');const qty=map.qty>=0?parseNum(qRaw):null;
+    if(map.qty>=0&&qty==null&&!art)continue; // строка группы
+    const sum=map.sum>=0?parseNum(g(r,'sum')):null;let price=map.price>=0?parseNum(g(r,'price')):null;
+    const key=keyOf(art,name);const ex=out.get(key);
+    if(ex){if(qty!=null)ex.qty=(ex.qty||0)+qty;if(sum!=null)ex.sum=(ex.sum||0)+sum;if(price!=null&&ex.price==null)ex.price=price}
+    else out.set(key,{art,name:name||art,unit:String(g(r,'unit')).trim()||'шт',qty,sum,price});
+  }
+  return [...out.values()].map(x=>{let p=x.price;if(p==null&&x.sum!=null&&x.qty)p=Math.round(x.sum/x.qty*100)/100;return [x.art,x.name,x.unit,p,x.qty]});
+}
+function renderMap(){
+  const {cols,map}=IMP;const items=parseImp();
+  const sel=k=>`<select class="in" data-m="${k}"><option value="-1">— нет —</option>${cols.map((c,i)=>`<option value="${i}" ${map[k]===i?'selected':''}>${esc(c)}</option>`).join('')}</select>`;
+  const withQ=items.filter(r=>r[4]>0).length,withP=items.filter(r=>r[3]!=null).length,sum=items.reduce((s,r)=>s+(r[4]>0?(r[4]*(r[3]||0)):0),0);
+  $('mapBox').innerHTML=`<div class="map">${FIELDS.map(([k,l])=>`<div class="field"><label>${l}</label>${sel(k)}</div>`).join('')}</div>
+   <div class="small">Найдено <b>${items.length}</b> позиций · в наличии по 1С: ${withQ} · с ценой: ${withP} · сумма остатков: <b>${money(sum)}</b></div>
+   <div class="tbl"><table><tr><th>Артикул</th><th>Наименование</th><th>Ед.</th><th>Цена</th><th>Остаток</th></tr>${items.slice(0,6).map(r=>`<tr><td class="mono">${esc(r[0])}</td><td>${esc(String(r[1]).slice(0,40))}</td><td>${esc(r[2])}</td><td>${r[3]??''}</td><td>${r[4]??''}</td></tr>`).join('')}</table></div>
+   <button class="btn pri big" id="impGo" ${items.length?'':'disabled'}>Загрузить ${items.length} позиций</button>`;
+  $('mapBox').querySelectorAll('select').forEach(s=>s.onchange=()=>{IMP.map[s.dataset.m]=+s.value;renderMap()});
+  $('impGo').onclick=()=>doImport(items);
+}
+async function doImport(items){
+  const btn=$('impGo');btn.disabled=true;
+  const CH=350,chunks=[];for(let i=0;i<items.length;i+=CH)chunks.push(items.slice(i,i+CH));
+  const old=S.meta.chunks||0;const meta={...S.meta,chunks:chunks.length,importedAt:Date.now(),src:IMP.src,count:items.length};
+  try{
+    if(S.mode==='db'){
+      for(let i=0;i<chunks.length;i++){btn.textContent=`Загружаю… ${i+1}/${chunks.length}`;await S.db.doc('nom/c'+i).set({i,items:chunks[i]})}
+      await S.db.doc('meta/main').set(meta);
+      for(let i=chunks.length;i<old;i++){try{await S.db.doc('nom/c'+i).delete()}catch(e){}}
+    }
+    S.meta=meta;S.nomChunks=new Map(chunks.map((c,i)=>['c'+i,{i,items:c}]));rebuildNom();saveLocal();
+    $('mapBox').innerHTML=`<div class="small" style="color:var(--good)">✓ Загружено ${items.length} позиций.</div>`;IMP=null;$('file').value='';$('paste').value='';
+    toast('Номенклатура загружена');refresh();
+  }catch(e){btn.disabled=false;btn.textContent='Повторить загрузку';toast(e&&e.code==='quota_exceeded'?'Место в хранилище закончилось':'Не загрузилось — проверьте интернет')}
+}
+
+/* ---------- settings ---------- */
+$('saveNames').onclick=async()=>{
+  const m=$('nmMain').value.trim()||'Основной склад',s=$('nmShop').value.trim()||'Цех';
+  S.meta={...S.meta,locs:{main:m,shop:s}};
+  if(S.mode==='db'){try{await S.db.doc('meta/main').set(S.meta)}catch(e){toast('Не сохранилось — нет связи');return}}
+  saveLocal();toast('Названия сохранены');refresh();
+};
+function wipeHandler(){
+  const n=allItems().filter(i=>i.log.length).length;
+  $('wipeBox').innerHTML=`<span class="small" style="align-self:center">Удалить записи по ${n} позициям? Отменить будет нельзя.</span><button class="btn danger" id="wipeYes">Да, удалить</button><button class="btn" id="wipeNo">Нет</button>`;
+  $('wipeNo').onclick=resetWipe;
+  $('wipeYes').onclick=async()=>{
+    const keys=[...new Set([...S.counts.keys(),...S.pending.keys()])];
+    if(S.mode==='db'){let i=0;for(const k of keys){i++;$('wipeYes').textContent=`Удаляю ${i}/${keys.length}`;try{await S.db.doc('counts/'+k).delete()}catch(e){}}}
+    S.counts.clear();S.pending.clear();persistPending();saveLocal();resetWipe();toast('Записи удалены');refresh();
+  };
+}
+function resetWipe(){$('wipeBox').innerHTML=`<button class="btn danger" id="wipe">Удалить все записи</button>`;$('wipe').onclick=wipeHandler}
+$('wipe').onclick=wipeHandler;
+
+/* ---------- demo ---------- */
+const DEMO=[['GT1749V-001','Картридж турбины GT1749V','шт',14500,3],['K03-0053','Картридж турбины K03 VW/Audi','шт',11800,2],['RK-GT15','Ремкомплект GT15-25','шт',2400,8],['RK-K04','Ремкомплект K04','шт',2900,5],['VNT-1544','Геометрия VNT GT1544V','шт',6800,1],['ACT-6NW','Актуатор электронный 6NW009550','шт',18500,1],['BLT-M8','Болт M8×20 корпусной','шт',35,120],['STD-M10','Шпилька M10×40 коллектор','шт',60,64],['GSK-T25','Прокладка турбины T25 вход','шт',180,30],['DTL-500','Деталан 500 мл','шт',650,6]];
+$('demoGo').onclick=()=>{
+  S._real={nomChunks:S.nomChunks,meta:S.meta,counts:S.counts,pending:S.pending,mode:S.mode};
+  S.mode='demo';S.meta={...S.meta,chunks:1};S.nomChunks=new Map([['c0',{i:0,items:DEMO}]]);S.counts=new Map();S.pending=new Map();rebuildNom();
+  const k=keyOf('RK-GT15','');S.counts.set(k,{art:'RK-GT15',name:'Ремкомплект GT15-25',unit:'шт',price:null,isNew:false,log:[{id:'d1',l:'main',q:6,s:'С1-П2',t:Date.now()-600000},{id:'d2',l:'shop',q:1,s:'',t:Date.now()-300000}]});
+  setTab('count');
+};
+$('demoExit').onclick=()=>{const r=S._real;if(!r)return;Object.assign(S,r);S._real=null;rebuildNom();setTab('count')};
+
+/* ---------- events ---------- */
+function setTab(t){
+  S.tab=t;document.querySelectorAll('nav.tabs button').forEach(b=>b.toggleAttribute('aria-current',false));
+  const b=document.querySelector(`nav.tabs button[data-tab="${t}"]`);if(b)b.setAttribute('aria-current','page');
+  for(const p of ['count','list','tot','data'])$('p-'+p).hidden=p!==t;
+  window.scrollTo(0,0);refresh();
+}
+document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+$('roomMain').onclick=()=>{S.loc='main';LS.set('pc_loc','main');refresh();if(sheetKey)updBtns()};
+$('roomShop').onclick=()=>{S.loc='shop';LS.set('pc_loc','shop');refresh();if(sheetKey)updBtns()};
+let qT;$('q').addEventListener('input',()=>{clearTimeout(qT);qT=setTimeout(renderResults,90)});
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const r=search($('q').value,2);if(r.length===1||(r.length&&artVariants($('q').value).includes(normArt(r[0].art))))openItem(r[0].key);else if(!r.length&&$('q').value.trim())openNew($('q').value.trim())}});
+$('qClear').onclick=()=>{$('q').value='';renderResults();renderRecent();$('q').focus()};
+$('shelf').value=LS.get('pc_shelf','');$('shelf').addEventListener('change',()=>LS.set('pc_shelf',$('shelf').value.trim()));
+let lT;$('lq').addEventListener('input',()=>{clearTimeout(lT);lT=setTimeout(()=>{S.listLimit=150;renderList()},120)});
+$('filters').addEventListener('click',e=>{const b=e.target.closest('button[data-f]');if(!b)return;S.filter=b.dataset.f;S.listLimit=150;renderList()});
+document.addEventListener('click',e=>{
+  const u=e.target.closest('[data-undo]');
+  if(u){e.stopPropagation();const [k,id]=u.dataset.undo.split('|');removeEntry(k,id);toast('Запись удалена');return}
+  const r=e.target.closest('button.row[data-key]');if(r)openItem(r.dataset.key);
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('ov').hidden)closeSheet()});
+// экран не гаснет во время подсчёта
+let wl=null;async function wake(){try{if(navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>wl=null)}}catch(e){}}
+document.addEventListener('pointerdown',wake,{once:false,passive:true});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')wake()});
+
+/* ---------- boot ---------- */
+for(const [k,v] of LS.get('pc_pending',[]))S.pending.set(k,v);
+refresh();
+let slowT=setTimeout(()=>{S.slow=true;updConn()},10000);
+(async()=>{
+  let db=null;
+  try{db=window.claude?await window.claude.use('db'):null}catch(e){db=null}
+  if(!db){
+    clearTimeout(slowT);S.slow=false;S.mode='local';
+    try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+    const L=LS.get('pc_local',null);
+    if(L){S.meta=L.meta||S.meta;S.nomChunks=new Map(L.nom||[]);S.counts=new Map(L.counts||[])}
+    for(const [k,v] of S.pending){if(v)S.counts.set(k,v)}S.pending.clear();persistPending();saveLocal();
+    rebuildNom();refresh();return;
+  }
+  S.db=db;
+  let gotMeta=false,gotNom=false,gotCounts=false;
+  const ready=()=>{if(gotMeta&&gotNom&&gotCounts&&S.mode==='loading'){S.mode='db';clearTimeout(slowT);S.slow=false;flush()}};
+  const onErr=e=>{S.err=e&&e.code;S.slow=true;updConn()};
+  db.doc('meta/main').onSnapshot(s=>{if(S.mode==='demo'){S._real.meta=s.exists?{...S._real.meta,...s.data()}:S._real.meta;return}
+    if(s.exists)S.meta={...S.meta,...s.data()};if(!s.metadata.fromCache){gotMeta=true;ready()}rebuildNom();refresh()},onErr);
+  db.collection('nom').onSnapshot(q=>{const m=new Map();for(const d of q.docs)m.set(d.id,d.data());
+    if(S.mode==='demo'){S._real.nomChunks=m;return}
+    S.nomChunks=m;if(!q.metadata.fromCache){gotNom=true;ready()}rebuildNom();refresh()},onErr);
+  db.collection('counts').onSnapshot(q=>{const m=new Map();for(const d of q.docs)m.set(d.id,d.data());
+    if(S.mode==='demo'){S._real.counts=m;return}
+    S.counts=m;if(!q.metadata.fromCache){gotCounts=true;ready()}if(S.slow&&!q.metadata.fromCache){S.slow=false}refresh()},onErr);
+})();
+</script>
+<script>
+if('serviceWorker' in navigator){addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
+</script>
+<!-- build 20261123-0130 -->
+</body>
+</html>
